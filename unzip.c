@@ -1,4 +1,4 @@
-// gcc -std=gnu11 -Wall -Wextra $(pkg-config --cflags minizip) -o zip.{out,c} $(pkg-config --libs minizip) && ./zip.out
+// gcc -std=gnu11 -Wall -Wextra $(pkg-config --cflags minizip) -o unzip.{out,c} $(pkg-config --libs minizip) && ./unzip.out
 
 #include <assert.h>
 #include <string.h>
@@ -37,13 +37,13 @@ static void UNTITLED(const unzFile file){
 
   // https://cdecl.org
   // const char * const ign[]={".osu",".mp3",".jpg",NULL}; // Array head cannot be assigned (not lvalue)
-  const char *const *ign=(const char *const []){".osu",".mp3",".jpg",NULL}; // Cast into anonymous array head, then assign to pointer
+  const char *const *ign=(const char *const []){".osu",".jpg",NULL}; // Cast into anonymous array head, then assign to pointer
   for(;*ign;++ign)
     if(0==strcmp(s,*ign))
       return;
-  assert(0==strcmp(s,".wav"));
+  assert(0==strcmp(s,".wav")||0==strcmp(s,".mp3"));
 
-  puts(szFileName);
+  // puts(szFileName);
   assert(UNZ_OK==unzOpenCurrentFile(file));
   #define x (file_info.uncompressed_size)
   #define y (file_info.uncompressed_size*2)
@@ -56,6 +56,7 @@ static void UNTITLED(const unzFile file){
   static_assert(sizeof(unsigned char)==1);
   char path[SIZE]="tmp/";
   strcat(path,szFileName);
+  printf("extracting %s ...\n",path);
   fwrite2(buf,1,x,path);
   #undef x
   #undef y
