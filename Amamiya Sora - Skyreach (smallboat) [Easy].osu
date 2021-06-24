@@ -51,7 +51,10 @@ Video,210,"video.avi"
 //Background Colour Transformations
 3,100,163,162,255
 
+// Repeatedly getline until reaching "[TimingPoints]\n"
 [TimingPoints]
+// time,beatLength,meter,sampleSet,sampleIndex,volume,uninherited,effects
+//t        L         m S I  v u e
 805,326.086956521739,4,2,2,60,1,0
 1783,-100,4,3,2,55,0,0
 1946,-100,4,3,2,45,0,0
