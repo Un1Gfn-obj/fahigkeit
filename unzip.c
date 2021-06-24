@@ -1,14 +1,15 @@
-// gcc -std=gnu11 -Wall -Wextra $(pkg-config --cflags minizip) -o unzip.{out,c} $(pkg-config --libs minizip) && ./unzip.out
-
 #include <assert.h>
 #include <string.h>
+#include <stdbool.h>
+#include <libgen.h> // basename
 
 // https://github.com/nih-at/libzip
 // #include <zip.h>
 // https://github.com/madler/zlib/tree/master/contrib/minizip
 #include <minizip/unzip.h>
 
-#define SIZE 1024
+#include "./effect.h"
+#include "./def.h"
 
 static void fwrite2(const void *restrict ptr, size_t size, size_t nmemb,const char *const path){
   FILE *stream=fopen(path,"wb");
@@ -33,38 +34,48 @@ static void UNTITLED(const unzFile file){
   assert(file_info.size_file_comment==0UL);
 
   const char *s=strrchr(szFileName,'.');
-  assert(s); // No suffix
+  assert(s); // Suffix is required
 
-  // https://cdecl.org
-  // const char * const ign[]={".osu",".mp3",".jpg",NULL}; // Array head cannot be assigned (not lvalue)
-  const char *const *ign=(const char *const []){".osu",".jpg",NULL}; // Cast into anonymous array head, then assign to pointer
-  for(;*ign;++ign)
-    if(0==strcmp(s,*ign))
-      return;
-  assert(0==strcmp(s,".wav")||0==strcmp(s,".mp3"));
+  bool skip=true;
 
-  // puts(szFileName);
-  assert(UNZ_OK==unzOpenCurrentFile(file));
-  #define x (file_info.uncompressed_size)
-  #define y (file_info.uncompressed_size*2)
-  // printf("expect %lu bytes\n",x);
-  assert(x>=1);
-  unsigned char buf[y];
-  bzero(buf,y);
-  assert(x==(unsigned long)unzReadCurrentFile(file,buf,y));
-  // printf("read %d bytes\n",unzReadCurrentFile(file,buf,y));
-  static_assert(sizeof(unsigned char)==1);
-  char path[SIZE]="tmp/";
-  strcat(path,szFileName);
-  printf("extracting %s ...\n",path);
-  fwrite2(buf,1,x,path);
-  #undef x
-  #undef y
-  assert(UNZ_OK==unzCloseCurrentFile(file));
+  if(0==strcmp(s,".mp3"))
+    skip=false;
+
+  if(0==strcmp(s,".wav")){
+    for(Effect *eff=effects;eff->filename;++eff){
+      if(0==strcmp(szFileName,eff->filename)){
+        skip=false;
+        break;
+      }
+    }
+  }
+
+  if(!skip){
+
+    // puts(szFileName);
+    assert(UNZ_OK==unzOpenCurrentFile(file));
+    #define x (file_info.uncompressed_size)
+    #define y (file_info.uncompressed_size*2)
+    // printf("expect %lu bytes\n",x);
+    assert(x>=1);
+    unsigned char buf[y];
+    bzero(buf,y);
+    printf("extracting %s ...\n",szFileName);
+    assert(x==(unsigned long)unzReadCurrentFile(file,buf,y));
+    // printf("read %d bytes\n",unzReadCurrentFile(file,buf,y));
+    static_assert(sizeof(unsigned char)==1);
+    char path[SIZE]="tmp/";
+    strcat(path,szFileName);
+    fwrite2(buf,1,x,path);
+    #undef x
+    #undef y
+    assert(UNZ_OK==unzCloseCurrentFile(file));
+
+  }
 
 }
 
-int main(){
+void unzip(){
 
   unzFile file=unzOpen("/home/darren/fahigkeit/190851 Amamiya Sora - Skyreach [no video].osz");
   assert(file);
@@ -88,7 +99,5 @@ int main(){
 
   assert(UNZ_OK==unzClose(file));
   file=NULL;
-
-  return 0;
 
 }
