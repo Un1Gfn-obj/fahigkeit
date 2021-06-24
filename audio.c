@@ -37,12 +37,6 @@ void Mix_OpenAudio2(){
   assert(channels2==channels);
 }
 
-static Mix_Chunk *Mix_LoadWAV2(const char *const file){
-  assert(0==strcmp(magic_file(cookie,file),"audio/x-wav"));
-  // magic_buffer();
-  return Mix_LoadWAV(file);
-}
-
 void Mix_LoadXXX(){
 
   // Init libmagic
@@ -57,9 +51,9 @@ void Mix_LoadXXX(){
 
   for(Effect *eff=effects;eff->filename;++eff){
     assert(!eff->chunk);
-    char path[SIZE]="tmp/";
-    strcat(path,eff->filename);
-    eff->chunk=Mix_LoadWAV2(path);
+    assert(0==strcmp(magic_buffer(cookie,eff->buf,eff->buflen),"audio/x-wav"));
+    eff->chunk=Mix_LoadWAV_RW(SDL_RWFromMem(eff->buf,eff->buflen),1);
+    // eff->chunk=Mix_QuickLoad_WAV(eff->buf);
     assert(eff->chunk);
   }
 
@@ -184,6 +178,7 @@ void Mix_FreeXXX(){
   Mix_HaltMusic2();
   for(Effect *eff=effects;eff->filename;++eff){
     assert(eff->chunk);Mix_FreeChunk(eff->chunk);eff->chunk=NULL;
+    assert(eff->buf);free(eff->buf);eff->buf=NULL;eff->buflen=0;
   }
   assert(gMusic);Mix_FreeMusic(gMusic);gMusic=NULL;
 }

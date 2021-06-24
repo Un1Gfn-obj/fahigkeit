@@ -5,7 +5,8 @@
 
 typedef struct {
   const char *filename;
-  // unsigned char *buf;
+  unsigned char *buf;
+  int buflen;
   Mix_Chunk *chunk;
   SDL_Scancode scancode;
   SDL_Keycode sym;

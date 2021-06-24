@@ -36,42 +36,49 @@ static void UNTITLED(const unzFile file){
   const char *s=strrchr(szFileName,'.');
   assert(s); // Suffix is required
 
-  bool skip=true;
-
-  if(0==strcmp(s,".mp3"))
-    skip=false;
-
-  if(0==strcmp(s,".wav")){
-    for(Effect *eff=effects;eff->filename;++eff){
-      if(0==strcmp(szFileName,eff->filename)){
-        skip=false;
-        break;
-      }
+  // Draw a flow chart!
+  Effect *eff=NULL;
+  if(0==strcmp(s,".mp3")){
+    ;
+  }else{
+    if(0!=strcmp(s,".wav")){
+      return;
+    }else{
+      for(eff=effects;eff->filename;++eff)
+        if(0==strcmp(szFileName,eff->filename))
+          break;
+      if(!(eff->filename))
+        return;
     }
   }
 
-  if(!skip){
+  assert(UNZ_OK==unzOpenCurrentFile(file));
+  #define x (file_info.uncompressed_size)
+  #define y (file_info.uncompressed_size*2)
+  assert(x>=1);
 
-    // puts(szFileName);
-    assert(UNZ_OK==unzOpenCurrentFile(file));
-    #define x (file_info.uncompressed_size)
-    #define y (file_info.uncompressed_size*2)
-    // printf("expect %lu bytes\n",x);
-    assert(x>=1);
+  if(!eff){
+    // mp3 - file
     unsigned char buf[y];
     bzero(buf,y);
-    printf("extracting %s ...\n",szFileName);
-    assert(x==(unsigned long)unzReadCurrentFile(file,buf,y));
-    // printf("read %d bytes\n",unzReadCurrentFile(file,buf,y));
-    static_assert(sizeof(unsigned char)==1);
     char path[SIZE]="tmp/";
     strcat(path,szFileName);
+    printf("extracting %s to %s ...\n",szFileName,path);
+    assert(x==(unsigned long)unzReadCurrentFile(file,buf,y));
+    static_assert(sizeof(unsigned char)==1);
     fwrite2(buf,1,x,path);
-    #undef x
-    #undef y
-    assert(UNZ_OK==unzCloseCurrentFile(file));
-
+  }else{
+    // wav - buf
+    assert(!(eff->buf)&&0==eff->buflen);
+    printf("extracting %s to RAM...\n",szFileName);
+    eff->buf=malloc(y);assert(eff->buf);
+    assert(x==(unsigned long)unzReadCurrentFile(file,eff->buf,y));
+    eff->buflen=x;
   }
+
+  #undef x
+  #undef y
+  assert(UNZ_OK==unzCloseCurrentFile(file));
 
 }
 
@@ -82,7 +89,7 @@ void unzip(){
 
   unz_global_info global_info={};
   assert(UNZ_OK==unzGetGlobalInfo(file,&global_info));
-  printf("%lu files\n",global_info.number_entry);
+  // printf("%lu files\n",global_info.number_entry);
   assert(0==global_info.size_comment);
   char szComment[SIZE]={};
   assert(0==unzGetGlobalComment(file,szComment,SIZE));
