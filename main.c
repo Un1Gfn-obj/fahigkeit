@@ -44,7 +44,7 @@ int main(){
 
   SDL_Init2();puts("");
 
-  gWindow=SDL_CreateWindow("fahigkeit",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,320,240,SDL_WINDOW_SHOWN);assert(gWindow);
+  assert((gWindow=SDL_CreateWindow("fahigkeit",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,320,240,SDL_WINDOW_SHOWN)));
 
   Mix_OpenAudio2();puts("");
 
