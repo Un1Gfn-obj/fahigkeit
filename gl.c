@@ -1,6 +1,15 @@
-// pkgs="sdl2,glew" && gcc -std=gnu11 -Wall -Wextra -Werror=shadow $(pkg-config --cflags "$pkgs") -o gl.out gl.c $(pkg-config --libs "$pkgs") && ./gl.out
+/*
 
-// pkgs="sdl2,glew" && cscope $(pkg-config --cflags-only-I "$pkgs") -1 GLfloat gl.c
+pkgs="sdl2,glew" && cscope $(pkg-config --cflags-only-I "$pkgs") -1 GLfloat gl.c
+
+pkgs="sdl2,glew" \
+printf "%s\n%s\n" "$(xxd -i vertex.glsl)" "$(xxd -i fragment.glsl)"  | sed -e "s/unsigned char/static const GLchar/g" -e "s/unsigned int/static const GLint/g" >glsl.h \
+&& gcc -std=gnu11 -g -Wall -Wextra -Werror=shadow $(pkg-config --cflags "$pkgs") -o gl.out -xc gl.c $(pkg-config --libs "$pkgs") \
+&& ./gl.out
+
+https://www.linuxjournal.com/content/embedding-file-executable-aka-hello-world-version-5967
+
+*/
 
 #include <assert.h>
 #include <stdio.h>
@@ -17,6 +26,10 @@
 #define MY_CONTEXT_PROFILE_MASK SDL_GL_CONTEXT_PROFILE_CORE
 // #define MY_CONTEXT_RELEASE SDL_GL_CONTEXT_RELEASE_BEHAVIOR_FLUSH // Set succeed with no effect
 
+// MSAA
+#define MY_MULTISAMPLEBUFFERS 1
+#define MY_MULTISAMPLESAMPLES 16
+
 // Not working
 // #define MY_ACCELERATED_VISUAL 0 // force software rendering // env LIBGL_ALWAYS_SOFTWARE=1 ./fahigkeit.out
 #define MY_ACCELERATED_VISUAL 1 // require hardware acceleration
@@ -26,13 +39,23 @@
 
 static SDL_Window *gWindow=NULL;
 static SDL_GLContext *gContext=NULL;
-static unsigned int shaderProgram=0;
 
-static unsigned int VAO=GL_INVALID_VALUE; // Vertex Array Object
-static unsigned int VBO=GL_INVALID_VALUE; // Vertex Buffer Object
+static GLuint program=0;
+
+static GLuint VAO=GL_INVALID_VALUE; // Vertex Array Object
+static GLuint VBO=GL_INVALID_VALUE; // Vertex Buffer Object
+
+// NOT null-terminated
+// static const GLchar *vertex_glsl;
+// static const GLchar *fragment_glsl;
+// static const GLint vertex_glsl_len;
+// static const GLint fragment_glsl_len;
+#include "./glsl.h"
 
 static void SDL_GL_SetAttribute2(){
 
+  assert(0==SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS,MY_MULTISAMPLEBUFFERS));
+  assert(0==SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES,MY_MULTISAMPLESAMPLES));
   assert(0==SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL,MY_ACCELERATED_VISUAL));
 
   // SDL_GL_CONTEXT_PROFILE_MASK determines the type of context created
@@ -62,8 +85,8 @@ static void SDL_GL_GetAttribute2(){
 
   // DL_GL_GetAttribute(SDL_GL_STENCIL_SIZE,&v) // Error 502
 
-  v=-1;assert(0==SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS,&v));assert(0==v);
-  v=-1;assert(0==SDL_GL_GetAttribute(SDL_GL_MULTISAMPLESAMPLES,&v));assert(0==v);
+  v=-1;assert(0==SDL_GL_GetAttribute(SDL_GL_MULTISAMPLEBUFFERS,&v));assert(MY_MULTISAMPLEBUFFERS==v);
+  v=-1;assert(0==SDL_GL_GetAttribute(SDL_GL_MULTISAMPLESAMPLES,&v));assert(MY_MULTISAMPLESAMPLES==v);
   puts("MSAA: OFF");
 
   v=-1;assert(0==SDL_GL_GetAttribute(SDL_GL_ACCELERATED_VISUAL,&v));assert(MY_ACCELERATED_VISUAL==v);
@@ -87,53 +110,49 @@ static void glGetString2(){
   s=(const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);assert(s);puts(s);
 }
 
-static unsigned int glCompileShader2(const char *const path,const GLenum shaderType){
+#define checkCompile(/*s,*/S) glGetXXXInfoLog2(/*s,*/S,glGetShaderiv,GL_COMPILE_STATUS,glGetShaderInfoLog)
+#define checkLink(/*s,*/P) glGetXXXInfoLog2(/*s,*/P,glGetProgramiv,GL_LINK_STATUS,glGetProgramInfoLog)
+static void glGetXXXInfoLog2(/*const char *const hint,*/GLuint id,void(*glGetXXXiv)(GLuint,GLenum,GLint*),GLenum pname,void (*glGetXXXInfoLog)(GLuint,GLsizei,GLsizei*,GLchar*)){
+  GLint success=0;
+  (*glGetXXXiv)(id,pname,&success);
+  if(GL_TRUE==success)
+    return;
+  // GLint logSize=SIZE;
+  GLint logSize=-1;
+  (*glGetXXXiv)(id,GL_INFO_LOG_LENGTH,&logSize);assert(logSize>=1);
+  GLchar infoLog[logSize];
+  bzero(infoLog,logSize);
+  (*glGetXXXInfoLog)(id,logSize,NULL,infoLog);
+  puts("");
+  // printf("%s:\n",hint);
+  printf(RED);
+  puts(infoLog);
+  printf(RESET);fflush(stdout);
+  assert(false);
+}
 
-  FILE *file=fopen(path,"r");assert(file);
-  assert(
-    0==fseek(file,0,SEEK_END) &&
-    0==feof(file) &&
-    0==ferror(file));
-  const long l=ftell(file); // Excluding null character
-  rewind(file);
-  assert(1==sizeof(GLchar));
-  GLchar buf[l+1];
-  bzero(buf,l+1);
-  assert((long long)l==(long long)fread(buf,1,l,file));
-  assert(buf[l]=='\0');
-  assert(buf[l-1]!='\0');
-
-  int success=0;
-  char infoLog[SIZE]={};
-  unsigned int shader=glCreateShader(shaderType);
-  // const GLchar *string=buf;
-  // glShaderSource(shader,1,&string,NULL);
-  // assert(buf==string);
-  glShaderSource(shader,1,&(const GLchar*){buf},NULL);
+static unsigned int glCompileShader2(const GLchar *const string,const GLint length,const GLenum shaderType){
+  GLuint shader=glCreateShader(shaderType);
+  const GLchar *s=string;
+  // glShaderSource(shader,1,&s,&(GLint){length});
+  glShaderSource(shader,1,&s,&length);
+  assert(string==s);
+  // glShaderSource(shader,1,&(const GLchar*){buf},NULL);
   glCompileShader(shader);
-  glGetShaderiv(shader,GL_COMPILE_STATUS,&success);
-  if(0==success){
-    glGetShaderInfoLog(shader, SIZE, NULL, infoLog);
-    assert(false);
-  }
+  checkCompile(/*"",*/shader);
   return shader;
-
 }
 
 static void glLinkProgram2(){
-  GLuint vertexShader=glCompileShader2("vertex.glsl",GL_VERTEX_SHADER);
-  GLuint fragmentShader=glCompileShader2("fragment.glsl",GL_FRAGMENT_SHADER);
-  int success=0;
-  char infoLog[SIZE]={};
-  // Link shader program
-  assert(1<=(shaderProgram=glCreateProgram()));
-  glAttachShader(shaderProgram,vertexShader);
-  glAttachShader(shaderProgram,fragmentShader);
-  glLinkProgram(shaderProgram);
-  glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-  if(0==success){bzero(infoLog,SIZE);glGetShaderInfoLog(shaderProgram, SIZE, NULL, infoLog);assert(false);}
-  glDeleteShader(vertexShader);
-  glDeleteShader(fragmentShader);
+  GLuint vertexShader=glCompileShader2(vertex_glsl,vertex_glsl_len,GL_VERTEX_SHADER);
+  GLuint fragmentShader=glCompileShader2(fragment_glsl,fragment_glsl_len,GL_FRAGMENT_SHADER);
+  assert(1<=(program=glCreateProgram()));
+  glAttachShader(program,vertexShader);
+  glAttachShader(program,fragmentShader);
+  glLinkProgram(program);
+  checkLink(/*"link program",*/program);
+  glDeleteShader(vertexShader);vertexShader=0;
+  glDeleteShader(fragmentShader);fragmentShader=0;
 }
 
 static void drawTriangle(const float *const vertices){
@@ -155,7 +174,7 @@ static void drawTriangle(const float *const vertices){
   glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
 
-  glUseProgram(shaderProgram);
+  glUseProgram(program);
   glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0); // no need to unbind it every time 
@@ -203,7 +222,7 @@ int main(){
   });
   getchar();
 
-  glDeleteProgram(shaderProgram);
+  glDeleteProgram(program);
 
   glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
