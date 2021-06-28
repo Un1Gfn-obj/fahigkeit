@@ -1,9 +1,9 @@
 /*
 
-pkgs="sdl2,glew" && cscope $(pkg-config --cflags-only-I "$pkgs") -1 GLfloat gl.c
+pkgs="sdl2,glew" && cscope $(pkg-config --cflags-only-I "$pkgs") -1 y1 gl.c
 
 pkgs="sdl2,glew" \
-printf "%s\n%s\n" "$(xxd -i vertex.glsl)" "$(xxd -i fragment.glsl)"  | sed -e "s/unsigned char/static const GLchar/g" -e "s/unsigned int/static const GLint/g" >glsl.h \
+printf "%s\n%s\n" "$(xxd -i vertex.glsl)" | sed -e "s/unsigned char/static const GLchar/g" -e "s/unsigned int/static const GLint/g" >glsl.h \
 && gcc -std=gnu11 -g -Wall -Wextra -Werror=shadow $(pkg-config --cflags "$pkgs") -o gl.out -xc gl.c $(pkg-config --libs "$pkgs") \
 && ./gl.out
 
@@ -20,6 +20,10 @@ https://www.linuxjournal.com/content/embedding-file-executable-aka-hello-world-v
 #include <SDL2/SDL_opengl.h>
 
 #include "./def.h"
+#include "./monokai.h"
+
+// NOT null-terminated
+#include "./glsl.h"
 
 #define MY_MAJOR 4
 #define MY_MINOR 6
@@ -34,23 +38,24 @@ https://www.linuxjournal.com/content/embedding-file-executable-aka-hello-world-v
 // #define MY_ACCELERATED_VISUAL 0 // force software rendering // env LIBGL_ALWAYS_SOFTWARE=1 ./fahigkeit.out
 #define MY_ACCELERATED_VISUAL 1 // require hardware acceleration
 
-#define WIDTH 320
-#define HEIGHT 240
+// #define WIDTH 320
+// #define HEIGHT 240
+#define WIDTH 640
+// #define HEIGHT 480
+#define HEIGHT WIDTH
 
 static SDL_Window *gWindow=NULL;
 static SDL_GLContext *gContext=NULL;
 
-static GLuint program=0;
-
 static GLuint VAO=GL_INVALID_VALUE; // Vertex Array Object
 static GLuint VBO=GL_INVALID_VALUE; // Vertex Buffer Object
 
-// NOT null-terminated
-// static const GLchar *vertex_glsl;
-// static const GLchar *fragment_glsl;
-// static const GLint vertex_glsl_len;
-// static const GLint fragment_glsl_len;
-#include "./glsl.h"
+const char *const fragmentShaderSource0=
+"#version 330 core\n\
+out vec4 FragColor;\n\
+void main(){FragColor=vec4(";
+const char *const fragmentShaderSource2=
+");}\n";
 
 static void SDL_GL_SetAttribute2(){
 
@@ -110,9 +115,9 @@ static void glGetString2(){
   s=(const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);assert(s);puts(s);
 }
 
-#define checkCompile(/*s,*/S) glGetXXXInfoLog2(/*s,*/S,glGetShaderiv,GL_COMPILE_STATUS,glGetShaderInfoLog)
-#define checkLink(/*s,*/P) glGetXXXInfoLog2(/*s,*/P,glGetProgramiv,GL_LINK_STATUS,glGetProgramInfoLog)
-static void glGetXXXInfoLog2(/*const char *const hint,*/GLuint id,void(*glGetXXXiv)(GLuint,GLenum,GLint*),GLenum pname,void (*glGetXXXInfoLog)(GLuint,GLsizei,GLsizei*,GLchar*)){
+#define checkCompile(s,S) glGetXXXInfoLog2(s,S,glGetShaderiv,GL_COMPILE_STATUS,glGetShaderInfoLog)
+#define checkLink(s,P) glGetXXXInfoLog2(s,P,glGetProgramiv,GL_LINK_STATUS,glGetProgramInfoLog)
+static void glGetXXXInfoLog2(const char *const hint,GLuint id,void(*glGetXXXiv)(GLuint,GLenum,GLint*),GLenum pname,void (*glGetXXXInfoLog)(GLuint,GLsizei,GLsizei*,GLchar*)){
   GLint success=0;
   (*glGetXXXiv)(id,pname,&success);
   if(GL_TRUE==success)
@@ -124,68 +129,101 @@ static void glGetXXXInfoLog2(/*const char *const hint,*/GLuint id,void(*glGetXXX
   bzero(infoLog,logSize);
   (*glGetXXXInfoLog)(id,logSize,NULL,infoLog);
   puts("");
-  // printf("%s:\n",hint);
+  printf("%s:\n",hint);
   printf(RED);
   puts(infoLog);
   printf(RESET);fflush(stdout);
   assert(false);
 }
 
-static unsigned int glCompileShader2(const GLchar *const string,const GLint length,const GLenum shaderType){
-  GLuint shader=glCreateShader(shaderType);
-  const GLchar *s=string;
-  // glShaderSource(shader,1,&s,&(GLint){length});
-  glShaderSource(shader,1,&s,&length);
-  assert(string==s);
-  // glShaderSource(shader,1,&(const GLchar*){buf},NULL);
-  glCompileShader(shader);
-  checkCompile(/*"",*/shader);
-  return shader;
-}
+static GLuint glLinkProgram2(const GLchar *const color){
 
-static void glLinkProgram2(){
-  GLuint vertexShader=glCompileShader2(vertex_glsl,vertex_glsl_len,GL_VERTEX_SHADER);
-  GLuint fragmentShader=glCompileShader2(fragment_glsl,fragment_glsl_len,GL_FRAGMENT_SHADER);
-  assert(1<=(program=glCreateProgram()));
+  GLuint vertexShader=glCreateShader(GL_VERTEX_SHADER);
+  assert(vertexShader>=1);
+  glShaderSource(vertexShader,1,&(const GLchar*){vertex_glsl},&vertex_glsl_len);
+  glCompileShader(vertexShader);checkCompile("vertexShader",vertexShader);
+
+  GLuint fragmentShader=glCreateShader(GL_FRAGMENT_SHADER);
+  assert(fragmentShader>=1);
+  // puts("---");
+  // puts(fragmentShaderSource0);
+  // puts("---");
+  // puts(HEX2GLSL(MK_BLACK));
+  // puts("---");
+  // puts(fragmentShaderSource2);
+  // puts("---");
+  glShaderSource(fragmentShader,3,(const char *const [3]){
+    fragmentShaderSource0,
+    color,
+    fragmentShaderSource2},
+  NULL);
+  glCompileShader(fragmentShader);checkCompile("fragmentShader",fragmentShader);
+
+  GLuint program=glCreateProgram();
+  assert(1<=program);
   glAttachShader(program,vertexShader);
   glAttachShader(program,fragmentShader);
-  glLinkProgram(program);
-  checkLink(/*"link program",*/program);
+  glLinkProgram(program);checkLink("link",program);
+
   glDeleteShader(vertexShader);vertexShader=0;
   glDeleteShader(fragmentShader);fragmentShader=0;
+
+  return program;
+
 }
 
-static void drawTriangle(const float *const vertices){
+static void vxo(){
 
-  glGenVertexArrays(1, &VAO);assert(GL_INVALID_VALUE!=VAO);glBindVertexArray(VAO);
-  glGenBuffers(1, &VBO);assert(GL_INVALID_VALUE!=VBO);glBindBuffer(GL_ARRAY_BUFFER,VBO);
-  glBufferData(GL_ARRAY_BUFFER, 9*sizeof(float), vertices, GL_STATIC_DRAW);
+  glGenBuffers(1, &VBO);assert(GL_INVALID_VALUE!=VBO);
+  glBindBuffer(GL_ARRAY_BUFFER,VBO);
 
+  glGenVertexArrays(1, &VAO);assert(GL_INVALID_VALUE!=VAO);
+  glBindVertexArray(VAO);
   glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-  // note that this is allowed, the call to glVertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-  // You can unbind the VAO afterwards so other VAO calls won't accidentally modify this VAO, but this rarely happens. Modifying other
-  // VAOs requires a call to glBindVertexArray anyways so we generally don't unbind VAOs (nor VBOs) when it's not directly necessary.
-  glBindVertexArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3*sizeof(GLfloat), NULL);
 
-  // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); // Wireframe polygons.
+  // We can glBindBuffer() now since glVertexAttribPointer() has registered VBO as the vertex attribute's bound vertex buffer object
+  // However, to draw a new triangle, coordinates in the buffer should be modifed by glBufferData()
+  // Therefore we leave the buffer intact
+  // glBindBuffer(GL_ARRAY_BUFFER,0);
 
-  glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-  glClear(GL_COLOR_BUFFER_BIT);
+}
 
-  glUseProgram(program);
-  glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
-  glDrawArrays(GL_TRIANGLES, 0, 3);
-  glBindVertexArray(0); // no need to unbind it every time 
-
+static void vxoClear(){
   glDeleteVertexArrays(1, &VAO);
   glDeleteBuffers(1, &VBO);
-  SDL_GL_SwapWindow(gWindow);
+  glBindVertexArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO);
+}
 
+typedef GLfloat const Triangle[9];
+
+// Pokayoke
+#define PT(X,Y) X,Y
+#define drawTriangle(PT0,PT1,PT2,SCALE) drawTriangle0(PT0,PT1,PT2,SCALE)
+#define drawTriangle0(X0,Y0,X1,Y1,X2,Y2,SCALE) drawTriangle00((const GLfloat[9]){\
+  (GLfloat)(SCALE)*(GLfloat)(X0),\
+  (GLfloat)(SCALE)*(GLfloat)(Y0),\
+  0.0f,\
+  (GLfloat)(SCALE)*(GLfloat)(X1),\
+  (GLfloat)(SCALE)*(GLfloat)(Y1),\
+  0.0f,\
+  (GLfloat)(SCALE)*(GLfloat)(X2),\
+  (GLfloat)(SCALE)*(GLfloat)(Y2),\
+  0.0f})
+static void drawTriangle00(const GLfloat *const vertices){
+  // assert((GLfloat)(y1)==-0.0f);
+  // printf("%f\n",y1);
+  glBufferData(GL_ARRAY_BUFFER,9*sizeof(GLfloat),vertices,GL_STATIC_DRAW);
+  // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE); // Wireframe polygons.
+  glDrawArrays(GL_TRIANGLES,0,3);
+  SDL_GL_SwapWindow(gWindow);
 }
 
 int main(){
+
+  // puts("");
+  // puts(HEX2GLSL(MK_GREEN));
 
   puts("");
   SDL_Init(SDL_INIT_TIMER|SDL_INIT_AUDIO|SDL_INIT_VIDEO);
@@ -199,6 +237,7 @@ int main(){
   assert((gContext=SDL_GL_CreateContext(gWindow)));
   assert(GLEW_OK==glewInit());
   assert(0==SDL_GL_SetSwapInterval(-1));
+  // SDL_GL_GetSwapInterval()
   SDL_GL_GetAttribute2();
 
   puts("");
@@ -206,28 +245,66 @@ int main(){
 
   glViewport(0, 0, WIDTH, HEIGHT);
 
-  glLinkProgram2();
+  GLuint redProgram=glLinkProgram2(HEX2GLSL(MK_RED));
+  GLuint greenProgram=glLinkProgram2(HEX2GLSL(MK_GREEN));
+  GLuint blueProgram=glLinkProgram2(HEX2GLSL(MK_BLUE));
 
-  drawTriangle((const float[]){
-    -0.5f, -0.5f, 0.0f, // left  
-     0.5f, -0.0f, 0.0f, // right 
-     0.0f,  0.5f, 0.0f  // top   
-  });
+  vxo();
+
+  glClearColor(HEX2RGBA(MK_WHITE));glClear(GL_COLOR_BUFFER_BIT);
+  SDL_GL_SwapWindow(gWindow);
+  getchar();
+  // SDL_GL_SwapWindow(gWindow);
+  // getchar();
+
+  glClearColor(HEX2RGBA(MK_BLACK));glClear(GL_COLOR_BUFFER_BIT);
+  static_assert(sizeof(GLfloat)==sizeof(float));
+
+  glUseProgram(redProgram);drawTriangle(
+    PT(-1.0f,+sqrtf(3.0f)),
+    PT(+1.0f,+sqrtf(3.0f)),
+    PT(+0.0f,+0.0f),
+    0.5f);
+  glUseProgram(greenProgram);drawTriangle(
+    PT(+1.0f,-sqrtf(3.0f)),
+    PT(+2.0f,+0.0f),
+    PT(+0.0f,+0.0f),
+    0.5f);
+  glUseProgram(blueProgram);drawTriangle(
+    PT(-1.0f,-sqrtf(3.0f)),
+    PT(-2.0f,+0.0f),
+    PT(+0.0f,+0.0f),
+    0.5f);
   getchar();
 
-  drawTriangle((const float[]){
-    -0.5f, -0.4f, 0.0f, // left
-     0.5f, -0.5f, 0.0f, // right
-     0.0f,  0.5f, 0.0f  // top
-  });
+  glClear(GL_COLOR_BUFFER_BIT);
+  glUseProgram(redProgram);drawTriangle(
+    PT(+sqrtf(3.0f),+1.0f),
+    PT(-sqrtf(3.0f),+1.0f),
+    PT(+0.0f,+0.0f),
+    0.4f);
+  glUseProgram(greenProgram);drawTriangle(
+    PT(+sqrtf(3.0f),+1.0f),
+    PT(+0.0f,-2.0f),
+    PT(+0.0f,+0.0f),
+    0.4f);
+  glUseProgram(blueProgram);drawTriangle(
+    PT(-sqrtf(3.0f),+1.0f),
+    PT(+0.0f,-2.0f),
+    PT(+0.0f,+0.0f),
+    0.4f);
   getchar();
 
-  glDeleteProgram(program);
+  vxoClear();
 
-  glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+  glClearColor(HEX2RGBA(MK_GRAY));
   glClear(GL_COLOR_BUFFER_BIT);
   SDL_GL_SwapWindow(gWindow);
   getchar();
+
+  glDeleteProgram(redProgram);redProgram=0;
+  glDeleteProgram(greenProgram);greenProgram=0;
+  glDeleteProgram(blueProgram);blueProgram=0;
 
   SDL_GL_DeleteContext(gContext);gContext=NULL;
   assert(gWindow);SDL_DestroyWindow(gWindow);gWindow=NULL;
